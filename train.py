@@ -6,7 +6,9 @@ import math
 import jieba
 import matplotlib.pyplot as plt
 from random import shuffle
+import keras
 import torch.nn.functional as F
+from torch.nn import Conv2d
 import gensim
 import pickle
 from torch.utils.data import TensorDataset,DataLoader,Dataset
@@ -68,18 +70,26 @@ class Test_data(Dataset):
 
 
 class WordAVGModel(torch.nn.Module):
-    def __init__(self, vocab_size, embedding_size, output_size,maxlen):
+    def __init__(self, vocab_size, embedding_size, output_size):
         super(WordAVGModel, self).__init__()
+        # self.features=torch.nn.Sequential(torch.nn.Embedding(vocab_size, embedding_size),
+        #                                   torch.nn.Conv1d(maxlen, maxlen, embedding_size) )
+        # self.classifer=torch.nn.Sequential(torch.nn.Linear(maxlen, output_size))
         self.embed = torch.nn.Embedding(vocab_size, embedding_size)
-        self.linear = torch.nn.Linear(maxlen, output_size)
-        self.conv1d=torch.nn.Conv1d(maxlen,maxlen,embedding_size)
+        self.conv1d=torch.nn.Conv1d(in_channels=embedding_size,out_channels=100,kernel_size=3,padding=1,stride=1)
+        self.pool=torch.nn.MaxPool1d(kernel_size=2,stride=2)
+        self.linear = torch.nn.Linear(10000,output_size)
 
     def forward(self, text):
         embedded = self.embed(text)  # [seq_len, batch_size, embedding_size]
-        conv1d=self.conv1d(embedded).squeeze()
+        embedded = embedded.transpose(1, 2)
+        conv1d=self.conv1d(embedded)
+        conv1d = conv1d.transpose(1, 2)
+        pooling=self.pool(conv1d)
+        pooling=pooling.view(pooling.size()[0],-1)
         # embedded = embedded.transpose(1,2) # [batch_size, seq_len, embedding_size]
         # pooled = F.avg_pool2d(embedded, (embedded.shape[1], 1)).squeeze(1)
-        x=self.linear(conv1d)
+        x=self.linear(pooling)
 
         return x
 
@@ -97,11 +107,11 @@ def binary_accuracy(preds, y):
     correct = (rounded_preds == y).float()
     acc = correct.sum() / len(correct)
     return acc
-def train(model, iter, optimizer, loss_fn):
+def train(model, iter, optimizer, loss_fn,epoch):
     epoch_loss, epoch_acc = 0., 0.
-    model.train()
+    # model.train()
     total_len = 0.
-    for i,data in enumerate(trainloader):
+    for i,data in enumerate(iter):
         # 前向传播
         data[0]=data[0].to(device)
         data[1]=data[1].to(device)
@@ -117,11 +127,15 @@ def train(model, iter, optimizer, loss_fn):
         optimizer.step()
         epoch_loss += loss.item() * len(data[1])
         epoch_acc += acc.item() * len(data[1])
-        total_len += len(data[1])
-        return epoch_loss / total_len, epoch_acc / total_len
+        total_len += len(data[0])
+        train_loss=epoch_loss / total_len
+        train_acc=epoch_acc / total_len
+        print("Epoch:", epoch, "iter:", i, "Train Loss:", train_loss, "Train Acc:", train_acc,"train_len:",total_len)
+
+    return epoch_loss / total_len, epoch_acc / total_len
 
 
-def evaluate(model, iter, loss_fn):
+def evaluate(model, iter, loss_fn,epoch):
     epoch_loss, epoch_acc = 0., 0.
     model.eval()
     total_len = 0.
@@ -137,6 +151,10 @@ def evaluate(model, iter, loss_fn):
         epoch_loss += loss.item() * len(data[1])
         epoch_acc += acc.item() * len(data[1])
         total_len += len(data[1])
+        valid_loss=epoch_loss / total_len
+        valid_acc=epoch_acc/total_len
+    print("Epoch:", epoch, "Valid Loss:", valid_loss, "Valid Acc：", valid_acc)
+    print("_____________________________________第"+str(epoch+1)+"轮训练____________________________________________________")
     model.train()
 
     return epoch_loss / total_len, epoch_acc / total_len
@@ -209,12 +227,13 @@ if __name__ == '__main__':
         elif word not in model:
             # words not found in embedding index will be all-zeros.
             embedding_matrix[i2] = np.random.uniform(-0.25, 0.25, 256)
-    model = WordAVGModel(vocab_size=len(vocab), embedding_size=256, output_size=1,maxlen=MAXLEN)#模型构建
+    model = WordAVGModel(vocab_size=len(vocab), embedding_size=256, output_size=1)#模型构建
+    # model.initialized_weights()
     pretrained_embedding = torch.from_numpy(embedding_matrix)
     model.embed.weight.data.copy_(pretrained_embedding)
 
     # 开始训练
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
     loss_fn = torch.nn.BCEWithLogitsLoss()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
@@ -226,8 +245,8 @@ if __name__ == '__main__':
     trainacc=[]
     val_acc=[]
     for epoch in range(N_EPOCHS):
-        train_loss, train_acc = train(model,trainloader, optimizer, loss_fn)
-        valid_loss, valid_acc = evaluate(model, validloader, loss_fn)
+        train_loss, train_acc = train(model,trainloader, optimizer, loss_fn,epoch)
+        valid_loss, valid_acc = evaluate(model, validloader, loss_fn,epoch)
         trainloss.append(train_loss)
         val_loss.append(valid_loss)
         trainacc.append(train_acc)
@@ -236,8 +255,7 @@ if __name__ == '__main__':
             best_valid_acc = valid_acc
             torch.save(model.state_dict(), "./model/wordavg-model.pth")
 
-        print("Epoch:", epoch, "Train Loss:", train_loss, "Train Acc:", train_acc)
-        print("Epoch:", epoch, "Valid Loss:", valid_loss, "Valid Acc：", valid_acc)
+
         plot_pic(trainloss,val_loss,'model loss','y_loss','epoch','./img/loss.png')
         plot_pic(trainacc, val_acc, 'model acc', 'y_acc', 'epoch', './img/acc.png')
 
