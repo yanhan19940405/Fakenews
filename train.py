@@ -154,7 +154,7 @@ def evaluate(model, iter, loss_fn,epoch):
         valid_loss=epoch_loss / total_len
         valid_acc=epoch_acc/total_len
     print("Epoch:", epoch, "Valid Loss:", valid_loss, "Valid Acc：", valid_acc)
-    print("_____________________________________第"+str(epoch+1)+"轮训练____________________________________________________")
+    print("_____________________________________第"+str(epoch+1)+"轮训练结束____________________________________________________")
     model.train()
 
     return epoch_loss / total_len, epoch_acc / total_len
