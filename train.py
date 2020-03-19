@@ -32,7 +32,7 @@ def handle_csv(path):
         if len(a)==3:
             Query1.append(a[0])
             Query2.append(a[1])
-            label.append(a[2])
+            label.append(int(a[2]))
         else:
             pass
     return Query1,Query2,label
@@ -90,22 +90,29 @@ class WordAVGModel(torch.nn.Module):
         # embedded = embedded.transpose(1,2) # [batch_size, seq_len, embedding_size]
         # pooled = F.avg_pool2d(embedded, (embedded.shape[1], 1)).squeeze(1)
         x=self.linear(pooling)
-
         return x
 
 
-def binary_accuracy(preds, y):
-    rounded_preds = torch.round(torch.sigmoid(preds))
-    correct = (rounded_preds == y).float()
-    acc = correct.sum() / len(correct)
-    return acc
+# def binary_accuracy(preds, y):
+#     rounded_preds = torch.round(torch.sigmoid(preds))
+#
+#     correct = (rounded_preds == y).float()
+#     acc = correct.sum() / len(correct)
+#     return acc
 
 
 
 def binary_accuracy(preds, y):
     rounded_preds = torch.round(torch.sigmoid(preds))
-    correct = (rounded_preds == y).float()
-    acc = correct.sum() / len(correct)
+    correct = (rounded_preds == y).int().to('cpu')
+    count=[]
+    for i in range(len(correct)):
+        if set(correct[i].numpy())=={1}:
+            count.append(1)
+        else:
+            count.append(0)
+
+    acc = sum(count) / len(count)
     return acc
 def train(model, iter, optimizer, loss_fn,epoch):
     epoch_loss, epoch_acc = 0., 0.
@@ -126,7 +133,7 @@ def train(model, iter, optimizer, loss_fn,epoch):
         loss.backward()
         optimizer.step()
         epoch_loss += loss.item() * len(data[1])
-        epoch_acc += acc.item() * len(data[1])
+        epoch_acc += acc* len(data[1])
         total_len += len(data[0])
         train_loss=epoch_loss / total_len
         train_acc=epoch_acc / total_len
@@ -149,7 +156,7 @@ def evaluate(model, iter, loss_fn,epoch):
         acc = binary_accuracy(y_pred.float(), data[1].float())
 
         epoch_loss += loss.item() * len(data[1])
-        epoch_acc += acc.item() * len(data[1])
+        epoch_acc += acc* len(data[1])
         total_len += len(data[1])
         valid_loss=epoch_loss / total_len
         valid_acc=epoch_acc/total_len
@@ -204,15 +211,21 @@ if __name__ == '__main__':
     for m in range(len(data_text)):#文本矩阵化
         for n in range(len(data_text[m])):
             data_text[m][n] = vocab[data_text[m][n]]
+
+    for v in range(len(label)):
+        if label[v]==1:
+            label[v]=[0,1]
+        elif label[v]==0:
+            label[v]=[1,0]
     Query2 = data_text
     traindata = Query2[0:20000]
     testdata = Query2[20000:]
     trainlabel = label[0:20000]
     testlabel = label[20000:]
-    trainlabel = torch.tensor([int(x) for x in trainlabel])
+    trainlabel = torch.tensor([x for x in trainlabel])
     traindata = torch.tensor(traindata)
     testdata = torch.tensor(testdata)
-    testlabel = torch.tensor([int(x) for x in testlabel])
+    testlabel = torch.tensor([x for x in testlabel])
     traindata = Text_data()#训练集数据生成器
     # traindata=TensorDataset(torch.tensor(traindata),torch.tensor([int(x) for x in trainlabel]))
     trainloader = DataLoader(traindata, batch_size=32, drop_last=True, shuffle=True)
@@ -227,7 +240,7 @@ if __name__ == '__main__':
         elif word not in model:
             # words not found in embedding index will be all-zeros.
             embedding_matrix[i2] = np.random.uniform(-0.25, 0.25, 256)
-    model = WordAVGModel(vocab_size=len(vocab), embedding_size=256, output_size=1)#模型构建
+    model = WordAVGModel(vocab_size=len(vocab), embedding_size=256, output_size=2)#模型构建
     # model.initialized_weights()
     pretrained_embedding = torch.from_numpy(embedding_matrix)
     model.embed.weight.data.copy_(pretrained_embedding)
@@ -238,7 +251,7 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     loss_fn = loss_fn.to(device)
-    N_EPOCHS = 100
+    N_EPOCHS = 15
     best_valid_acc = 0.
     trainloss=[]
     val_loss=[]
