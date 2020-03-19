@@ -102,7 +102,7 @@ class WordAVGModel(torch.nn.Module):
 
 
 
-def binary_accuracy(preds, y):
+def binary_accuracy(preds, y):#标签one-hot
     rounded_preds = torch.round(torch.sigmoid(preds))
     correct = (rounded_preds == y).int().to('cpu')
     count=[]
