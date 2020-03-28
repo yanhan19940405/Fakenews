@@ -11,6 +11,7 @@ import torch.nn.functional as F
 from torch.nn import Conv2d
 import gensim
 import pickle
+from att import AttLayer
 from torch.utils.data import TensorDataset,DataLoader,Dataset
 def handle_csv(path):
     data=[]
@@ -69,9 +70,9 @@ class Test_data(Dataset):
         return data, label
 
 
-class WordAVGModel(torch.nn.Module):
-    def __init__(self, vocab_size, embedding_size, output_size):
-        super(WordAVGModel, self).__init__()
+class CNN(torch.nn.Module):
+    def __init__(self, vocab_size, embedding_size, output_size,out):
+        super(CNN, self).__init__()
         # self.features=torch.nn.Sequential(torch.nn.Embedding(vocab_size, embedding_size),
         #                                   torch.nn.Conv1d(maxlen, maxlen, embedding_size) )
         # self.classifer=torch.nn.Sequential(torch.nn.Linear(maxlen, output_size))
@@ -79,9 +80,11 @@ class WordAVGModel(torch.nn.Module):
         self.conv1d=torch.nn.Conv1d(in_channels=embedding_size,out_channels=100,kernel_size=3,padding=1,stride=1)
         self.pool=torch.nn.MaxPool1d(kernel_size=2,stride=2)
         self.linear = torch.nn.Linear(10000,output_size)
+        self.att=AttLayer(out)
 
     def forward(self, text):
         embedded = self.embed(text)  # [seq_len, batch_size, embedding_size]
+        embedded = self.att(embedded)
         embedded = embedded.transpose(1, 2)
         conv1d=self.conv1d(embedded)
         conv1d = conv1d.transpose(1, 2)
@@ -91,6 +94,16 @@ class WordAVGModel(torch.nn.Module):
         # pooled = F.avg_pool2d(embedded, (embedded.shape[1], 1)).squeeze(1)
         x=self.linear(pooling)
         return x
+
+    def initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, torch.nn.Conv1d):
+                torch.nn.init.xavier_normal_(m.weight.data)
+                if m.bias is not None:
+                    m.bias.data.zero_()
+            elif isinstance(m, torch.nn.Linear):
+                torch.nn.init.normal_(m.weight.data, 0, 0.01)
+                m.bias.data.zero_()
 
 
 # def binary_accuracy(preds, y):
@@ -240,7 +253,7 @@ if __name__ == '__main__':
         elif word not in model:
             # words not found in embedding index will be all-zeros.
             embedding_matrix[i2] = np.random.uniform(-0.25, 0.25, 256)
-    model = WordAVGModel(vocab_size=len(vocab), embedding_size=256, output_size=2)#模型构建
+    model = CNN(vocab_size=len(vocab), embedding_size=256, output_size=2,out=256)#模型构建
     # model.initialized_weights()
     pretrained_embedding = torch.from_numpy(embedding_matrix)
     model.embed.weight.data.copy_(pretrained_embedding)
@@ -251,7 +264,7 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     loss_fn = loss_fn.to(device)
-    N_EPOCHS = 15
+    N_EPOCHS = 8
     best_valid_acc = 0.
     trainloss=[]
     val_loss=[]
@@ -269,7 +282,7 @@ if __name__ == '__main__':
             torch.save(model.state_dict(), "./model/wordavg-model.pth")
 
 
-        plot_pic(trainloss,val_loss,'model loss','y_loss','epoch','./img/loss.png')
-        plot_pic(trainacc, val_acc, 'model acc', 'y_acc', 'epoch', './img/acc.png')
+    plot_pic(trainloss,val_loss,'model loss','y_loss','epoch','./img/att_loss.png')
+    plot_pic(trainacc, val_acc, 'model acc', 'y_acc', 'epoch', './img/att_acc.png')
 
 print(1)
