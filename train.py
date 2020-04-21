@@ -112,23 +112,48 @@ class CNN(torch.nn.Module):
 #     correct = (rounded_preds == y).float()
 #     acc = correct.sum() / len(correct)
 #     return acc
-
-
+#
+# def binary_accuracy(preds, y):#标签one-hot
+#     rounded_preds = torch.round(torch.sigmoid(preds))
+#     correct = (rounded_preds == y).int().to('cpu')
+#     count=[]
+#     for i in range(len(correct)):
+#         if set(correct[i].numpy())=={1}:
+#             count.append(1)
+#         else:
+#             count.append(0)
+#
+#     acc = sum(count) / len(count)
+#     return acc
 
 def binary_accuracy(preds, y):#标签one-hot
-    rounded_preds = torch.round(torch.sigmoid(preds))
-    correct = (rounded_preds == y).int().to('cpu')
-    count=[]
-    for i in range(len(correct)):
-        if set(correct[i].numpy())=={1}:
-            count.append(1)
-        else:
-            count.append(0)
-
-    acc = sum(count) / len(count)
-    return acc
+    preds = torch.round(torch.sigmoid(preds))
+    preds = preds.cpu().detach().numpy()
+    y = y.cpu().detach().numpy()
+    TP, TN, FN, FP = 0, 0, 0, 0
+    for i in range(len(y)):
+        a = [i for i in y[i]]
+        b = [i for i in preds[i]]
+        if b == [0, 1] and a == [0, 1]:
+            TP = TP + 1
+        # TN    predict 和 label 同时为0
+        elif b == [1, 0] and a == [1, 0]:
+            TN = TN + 1
+        # FN    predict 0 label 1
+        elif b == [1, 0] and a == [0, 1]:
+            FN = FN + 1
+        # FP    predict 1 label 0
+        elif b == [0, 1] and a == [1, 0]:
+            FP = FP + 1
+    # print(TN,TP,FP,FN)
+    e = 0.000001
+    p = TP / (TP + FP + e)
+    recall = TP / (TP + FN + e)
+    F1 = 2 * recall * p / (recall + p + e)
+    acc = (TP + TN) / (TP + TN + FP + FN)
+    return acc, F1, p, recall
 def train(model, iter, optimizer, loss_fn,epoch):
-    epoch_loss, epoch_acc = 0., 0.
+    epoch_loss, epoch_acc, epoch_recall, epoch_F1 = 0., 0., 0., 0.
     # model.train()
     total_len = 0.
     for i,data in enumerate(iter):
@@ -138,7 +163,7 @@ def train(model, iter, optimizer, loss_fn,epoch):
         y_pred = model(data[0]).squeeze()
         # 计算loss
         loss = loss_fn(y_pred.float(), data[1].float())
-        acc=binary_accuracy(y_pred.float(), data[1].float())
+        acc, F1, P, recall = binary_accuracy(y_pred.float(), data[1].float())
 
 
         # 更新参数
@@ -146,38 +171,49 @@ def train(model, iter, optimizer, loss_fn,epoch):
         loss.backward()
         optimizer.step()
         epoch_loss += loss.item() * len(data[1])
-        epoch_acc += acc* len(data[1])
+        epoch_acc += acc * len(data[1])
+        epoch_recall += recall * len(data[1])
+        epoch_F1 += F1 * len(data[1])
         total_len += len(data[0])
-        train_loss=epoch_loss / total_len
-        train_acc=epoch_acc / total_len
-        print("Epoch:", epoch, "iter:", i, "Train Loss:", train_loss, "Train Acc:", train_acc,"train_len:",total_len)
-
-    return epoch_loss / total_len, epoch_acc / total_len
+        train_loss = epoch_loss / total_len
+        train_acc = epoch_acc / total_len
+        train_recall = epoch_recall / total_len
+        train_F1 = epoch_F1 / total_len
+        print("Epoch:", epoch, "iter:", i, "Train Loss:", train_loss, "Train Acc:", train_acc, "Train_recall:",train_recall, "Train_F1:", train_F1, "train_len:", total_len, 'lr', optimizer.param_groups[0]['lr'])
+    print("Epoch:", epoch, "epoch train Loss:", train_loss, "Epoch train Acc：", train_acc, "Epoch train recall",train_recall, "Epoch Valid F1", train_F1)
+    print("_____________________________________第" + str(epoch + 1) + "轮训练集合处理完毕，准备模型验证____________________________________________________")
+    return epoch_loss / total_len, epoch_acc / total_len,epoch_recall/total_len ,epoch_F1/total_len
 
 
 def evaluate(model, iter, loss_fn,epoch):
-    epoch_loss, epoch_acc = 0., 0.
+    epoch_loss, epoch_acc, epoch_recall, epoch_F1 = 0., 0., 0., 0.
     model.eval()
     total_len = 0.
-    for i,data in enumerate(iter):
+    for i, data in enumerate(iter):
         data[0] = data[0].to(device)
         data[1] = data[1].to(device)
         model = model.to(device)
         loss_fn = loss_fn.to(device)
-        y_pred= model(data[0]).squeeze()
+        y_pred = model(data[0]).squeeze()
         loss = loss_fn(y_pred.float(), data[1].float())
-        acc = binary_accuracy(y_pred.float(), data[1].float())
+        acc, F1, P, recall = binary_accuracy(y_pred.float(), data[1].float())
 
         epoch_loss += loss.item() * len(data[1])
-        epoch_acc += acc* len(data[1])
-        total_len += len(data[1])
-        valid_loss=epoch_loss / total_len
-        valid_acc=epoch_acc/total_len
-    print("Epoch:", epoch, "Valid Loss:", valid_loss, "Valid Acc：", valid_acc)
-    print("_____________________________________第"+str(epoch+1)+"轮训练结束____________________________________________________")
+
+        epoch_acc += acc * len(data[1])
+        epoch_recall += recall * len(data[1])
+        epoch_F1 += F1 * len(data[1])
+        total_len += len(data[0])
+        valid_loss = epoch_loss / total_len
+        valid_acc = epoch_acc / total_len
+        valid_recall = epoch_recall / total_len
+        valid_F1 = epoch_F1 / total_len
+        print("i:", i, "Valid Loss:", valid_loss, "Valid Acc：", valid_acc)
+    print("Epoch:", epoch, "epoch Valid Loss:", valid_loss, "Epoch Valid Acc：", valid_acc,'Epoch valid recall:', valid_recall,'Epoch valid F1:',valid_F1)
+    print("_____________________________________第" + str(epoch + 1) + "轮训练结束____________________________________________________")
     model.train()
 
-    return epoch_loss / total_len, epoch_acc / total_len
+    return epoch_loss / total_len, epoch_acc / total_len,epoch_recall/total_len , epoch_F1/total_len
 def plot_pic(train,test,name,y_name,x_name,file_name):
     plt.plot(train)
     plt.plot(test)
@@ -259,30 +295,49 @@ if __name__ == '__main__':
     model.embed.weight.data.copy_(pretrained_embedding)
 
     # 开始训练
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+    lr=0.0001
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     loss_fn = torch.nn.BCEWithLogitsLoss()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     loss_fn = loss_fn.to(device)
-    N_EPOCHS = 8
+    N_EPOCHS = 100
     best_valid_acc = 0.
     trainloss=[]
     val_loss=[]
     trainacc=[]
     val_acc=[]
+    train_recall=[]
+    val_recall=[]
+    train_F1=[]
+    val_F1=[]
+    lr_list=[]
+    scheduler_lr = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.1, mode='min', patience=10,
+                                                        cooldown=0, min_lr=0.00001, verbose=0,eps=10**-6)
     for epoch in range(N_EPOCHS):
-        train_loss, train_acc = train(model,trainloader, optimizer, loss_fn,epoch)
-        valid_loss, valid_acc = evaluate(model, validloader, loss_fn,epoch)
+        if epoch < 10:
+            ga = lr/ 10
+            optimizer.param_groups[0]['lr'] = (epoch+1) * ga
+        else:
+            pass
+        train_loss, train_acc ,trainrecall,trainF1= train(model,trainloader, optimizer, loss_fn,epoch)
+        valid_loss, valid_acc,validrecall, validF1= evaluate(model, validloader, loss_fn,epoch)
         trainloss.append(train_loss)
         val_loss.append(valid_loss)
         trainacc.append(train_acc)
         val_acc.append(valid_acc)
+        train_F1.append(trainF1)
+        val_F1.append(validF1)
+        train_recall.append(trainrecall)
+        val_recall.append(validrecall)
         if valid_acc > best_valid_acc:
             best_valid_acc = valid_acc
             torch.save(model.state_dict(), "./model/wordavg-model.pth")
+        scheduler_lr.step(train_loss)
 
-
-    plot_pic(trainloss,val_loss,'model loss','y_loss','epoch','./img/att_loss.png')
-    plot_pic(trainacc, val_acc, 'model acc', 'y_acc', 'epoch', './img/att_acc.png')
+    plot_pic(trainloss,val_loss,'model loss','y_loss','epoch','./img/att_loss_3.png')
+    plot_pic(trainacc, val_acc, 'model acc', 'y_acc', 'epoch', './img/att_acc_3.png')
+    plot_pic(train_F1, val_F1, 'model F1-Score', 'F1-score', 'epoch', './img/att_F1.png')
+    plot_pic(train_recall, val_recall, 'model recall', 'Recall', 'epoch', './img/att_Recall.png')
 
 print(1)
