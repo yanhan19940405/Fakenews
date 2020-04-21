@@ -51,3 +51,13 @@ Loss表现如下：
 acc表现如下：
 
 ![图4 attacc图](https://github.com/yanhan19940405/Fakenews/blob/master/img/att_acc.png)
+
+
+#2020.04.21新增学习率调整机制，独热机制，F1-Score曲线，Recall曲线，优化模型训练打印信息显示过程#
+![图5 模型acc图](https://github.com/yanhan19940405/Fakenews/blob/master/img/att_acc_3.png)
+
+![图6 模型loss图](https://github.com/yanhan19940405/Fakenews/blob/master/img/att_loss_3.png)
+
+![图6 模型Recall图](https://github.com/yanhan19940405/Fakenews/blob/master/img/att_Recall.png)
+
+![图7 模型F1-score图](https://github.com/yanhan19940405/Fakenews/blob/master/img/att_F1.png)
