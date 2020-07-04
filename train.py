@@ -12,6 +12,8 @@ from torch.nn import Conv2d
 import gensim
 import pickle
 from att import AttLayer
+from selfattention import SelfAttLayer
+from MulitHeadAttention import MulitHeadAttentionAttLayer
 from torch.utils.data import TensorDataset,DataLoader,Dataset
 def handle_csv(path):
     data=[]
@@ -80,14 +82,18 @@ class CNN(torch.nn.Module):
         self.conv1d=torch.nn.Conv1d(in_channels=embedding_size,out_channels=100,kernel_size=3,padding=1,stride=1)
         self.pool=torch.nn.MaxPool1d(kernel_size=2,stride=2)
         self.linear = torch.nn.Linear(10000,output_size)
-        self.att=AttLayer(out)
+        # self.att=AttLayer(out)
+        self.selfatt=SelfAttLayer(d=100) #使用自注意力机制
+        # self.Multiatt=MulitHeadAttentionAttLayer(d=100,h=3) #使用多头注意力机制，由于多头注意力机制h叠加姐影响，注意调整模型最后一层全连接层输出张量维度，改成30000才能运行
 
     def forward(self, text):
         embedded = self.embed(text)  # [seq_len, batch_size, embedding_size]
-        embedded = self.att(embedded)
+        # embedded = self.att(embedded)
         embedded = embedded.transpose(1, 2)
         conv1d=self.conv1d(embedded)
         conv1d = conv1d.transpose(1, 2)
+        conv1d=self.selfatt(conv1d) #使用自注意力机制
+        # conv1d = self.Multiatt(conv1d)#使用多头注意力机制，由于多头注意力机制h叠加姐影响，注意调整模型最后一层全连接层输出张量维度，改成30000才能运行
         pooling=self.pool(conv1d)
         pooling=pooling.view(pooling.size()[0],-1)
         # embedded = embedded.transpose(1,2) # [batch_size, seq_len, embedding_size]
